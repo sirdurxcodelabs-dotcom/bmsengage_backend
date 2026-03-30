@@ -1,15 +1,22 @@
 const nodemailer = require('nodemailer');
 
 // Create reusable transporter
+// Uses port 465 (SSL) by default — port 587 (STARTTLS) is blocked on many cloud hosts (Render, Railway, etc.)
 const createTransporter = () => {
+  const port = parseInt(process.env.EMAIL_PORT) || 465;
+  const secure = port === 465; // true for 465 (SSL), false for 587 (STARTTLS)
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    secure: false, // true for 465, false for other ports
+    port,
+    secure,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
+    // Increase timeouts for cloud environments
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 };
 
@@ -479,8 +486,9 @@ const sendWelcomeEmail = async (email, userName) => {
     console.log(`✓ Welcome email sent to ${email}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Error sending welcome email:', error);
-    throw new Error('Failed to send welcome email');
+    // Never throw — welcome email failure must not break account verification
+    console.error('Error sending welcome email:', error.message);
+    return { success: false };
   }
 };
 
@@ -488,26 +496,24 @@ const sendWelcomeEmail = async (email, userName) => {
 const sendNotificationEmail = async (email, userName, notificationType, notificationData) => {
   try {
     const transporter = createTransporter();
-    
     const subjects = {
       login: 'New Login Detected - BMS Engage',
       post_published: 'Post Published Successfully - BMS Engage',
-      post_scheduled: 'Post Scheduled - BMS Engage'
+      post_scheduled: 'Post Scheduled - BMS Engage',
     };
-    
     const mailOptions = {
       from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
       to: email,
       subject: subjects[notificationType] || 'Notification - BMS Engage',
       html: getNotificationEmailTemplate(userName, notificationType, notificationData),
     };
-
     const info = await transporter.sendMail(mailOptions);
     console.log(`✓ Notification email sent to ${email}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Error sending notification email:', error);
-    throw new Error('Failed to send notification email');
+    // Never throw — email failure must not break the calling flow
+    console.error('Error sending notification email:', error.message);
+    return { success: false };
   }
 };
 
