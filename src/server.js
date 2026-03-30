@@ -26,13 +26,11 @@ app.use(express.urlencoded({ extended: true }));
 const startServer = async () => {
   try {
     await connectDB();
-    
-    // Start the background scheduler
     startScheduler();
-    
-    // Test email configuration
-    await testEmailConfig();
-    
+
+    // Test email config in background — don't block server startup
+    testEmailConfig().catch(() => {});
+
     console.log('✓ Database connected');
     console.log('✓ Scheduler started');
   } catch (error) {

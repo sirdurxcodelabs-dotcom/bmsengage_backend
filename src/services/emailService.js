@@ -4,7 +4,7 @@ const nodemailer = require('nodemailer');
 // Uses port 465 (SSL) by default — port 587 (STARTTLS) is blocked on many cloud hosts (Render, Railway, etc.)
 const createTransporter = () => {
   const port = parseInt(process.env.EMAIL_PORT) || 465;
-  const secure = port === 465; // true for 465 (SSL), false for 587 (STARTTLS)
+  const secure = port === 465;
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port,
@@ -13,10 +13,10 @@ const createTransporter = () => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    // Increase timeouts for cloud environments
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    // Short timeouts — email is fire-and-forget, fail fast
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 8000,
   });
 };
 

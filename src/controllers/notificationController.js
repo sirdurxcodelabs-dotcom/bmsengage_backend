@@ -87,37 +87,30 @@ const deleteNotification = async (req, res) => {
 };
 
 // Create notification (helper function)
+// Email is always fire-and-forget — never blocks the caller
 const createNotification = async (userId, type, title, message, data = {}, sendEmail = false) => {
   try {
-    const notification = new Notification({
-      user: userId,
-      type,
-      title,
-      message,
-      data
-    });
-    
+    const notification = new Notification({ user: userId, type, title, message, data });
     await notification.save();
-    
-    // Send email notification if requested
+
+    // Fire-and-forget email — do NOT await, do NOT block the response
     if (sendEmail) {
-      const User = require('../models/User');
-      const user = await User.findById(userId);
-      
-      if (user && user.email) {
+      setImmediate(async () => {
         try {
-          await emailService.sendNotificationEmail(
-            user.email,
-            user.name,
-            type,
-            { ...data, time: new Date().toLocaleString() }
-          );
-        } catch (emailError) {
-          console.error('Failed to send notification email:', emailError);
+          const User = require('../models/User');
+          const user = await User.findById(userId).select('email name');
+          if (user?.email) {
+            await emailService.sendNotificationEmail(
+              user.email, user.name, type,
+              { ...data, time: new Date().toLocaleString() }
+            );
+          }
+        } catch (e) {
+          console.error('Background email error:', e.message);
         }
-      }
+      });
     }
-    
+
     return notification;
   } catch (error) {
     console.error('Error creating notification:', error);
