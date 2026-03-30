@@ -87,7 +87,7 @@ exports.uploadSingle = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const { title, category, description, tags, status, visibility } = req.body;
+    const { title, category, description, tags, status, visibility, startupId } = req.body;
     const cloudResult = req.file;
 
     const context = req.user.activeContext || 'personal';
@@ -101,6 +101,8 @@ exports.uploadSingle = async (req, res) => {
       userId: req.user.id,
       context,
       agencyId,
+      // startupId only stored for agency context
+      startupId: (context === 'agency' && startupId) ? startupId : null,
       title: title || req.file.originalname.split('.')[0],
       description: description || '',
       category: category || 'Image',
@@ -565,6 +567,7 @@ const formatMedia = (doc, requestingUserId) => {
     id: obj._id.toString(),
     context: obj.context || 'personal',
     agencyId: obj.agencyId?.toString() || null,
+    startupId: obj.startupId?.toString() || null,
     approvalStatus: obj.approvalStatus || 'pending',
     approvedBy: obj.approvedBy?.toString() || null,
     approvedAt: obj.approvedAt || null,

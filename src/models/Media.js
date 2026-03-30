@@ -80,6 +80,8 @@ const mediaSchema = new mongoose.Schema({
   context: { type: String, enum: ['personal', 'agency'], default: 'personal' },
   // agencyId: the owner's _id when context is 'agency' (used to group agency assets)
   agencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  // startupId: optional — links asset to a specific startup (agency context only)
+  startupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Startup', default: null },
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
   category: {
