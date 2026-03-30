@@ -14,9 +14,8 @@ const generateRandomToken = () => {
 
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role } = req.body;
 
-    // Validate password strength
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
@@ -26,25 +25,28 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    // Validate role — must be one of the allowed ROLES
+    const { ROLES } = require('../models/User');
+    const assignedRole = role && ROLES.includes(role) ? role : 'graphic_designer';
+
     const verificationToken = generateRandomToken();
-    const user = new User({ 
-      name, 
-      email, 
+    const user = new User({
+      name,
+      email,
       password,
+      roles: [assignedRole],
       verificationToken,
-      verificationTokenExpires: Date.now() + 180000 // 3 minutes (180000ms)
+      verificationTokenExpires: Date.now() + 180000,
     });
     await user.save();
 
     const token = generateToken(user._id);
 
-    // Send verification email
     try {
       await emailService.sendVerificationEmail(email, name, verificationToken);
       console.log(`✓ Verification email sent to ${email}`);
     } catch (emailError) {
       console.error('Failed to send verification email:', emailError);
-      // Don't fail signup if email fails, user can resend
     }
 
     res.status(201).json({

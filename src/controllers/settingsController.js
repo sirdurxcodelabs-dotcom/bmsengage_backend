@@ -9,6 +9,12 @@ const formatUser = (u) => ({
   name: u.name,
   email: u.email,
   verified: u.verified,
+  isSuperAdmin: u.isSuperAdmin || false,
+  accountStatus: u.accountStatus || 'active',
+  enabledFeatures: u.enabledFeatures || {
+    gallery: true, socialAccounts: true, posts: true,
+    scheduler: true, analytics: true, notifications: true, settings: true,
+  },
   avatar: u.avatar,
   phone: u.phone,
   bio: u.bio,

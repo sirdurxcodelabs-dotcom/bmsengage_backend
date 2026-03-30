@@ -68,6 +68,24 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true, minlength: 6 },
   verified: { type: Boolean, default: false },
+  // superadmin flag — set manually or via seed, never via signup
+  isSuperAdmin: { type: Boolean, default: false },
+  // Account status — superadmin can approve/reject/suspend users
+  accountStatus: {
+    type: String,
+    enum: ['pending', 'active', 'rejected', 'suspended'],
+    default: 'active', // existing users stay active; new signups can be set to pending
+  },
+  // Feature toggles — superadmin controls which sidebar items each user sees
+  enabledFeatures: {
+    gallery: { type: Boolean, default: true },
+    socialAccounts: { type: Boolean, default: true },
+    posts: { type: Boolean, default: true },
+    scheduler: { type: Boolean, default: true },
+    analytics: { type: Boolean, default: true },
+    notifications: { type: Boolean, default: true },
+    settings: { type: Boolean, default: true },
+  },
   avatar: { type: String, default: null },
   phone: { type: String, default: '' },
   bio: { type: String, default: '' },
