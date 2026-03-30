@@ -4,6 +4,11 @@ const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const { cloudinary } = require('../config/cloudinary');
 
+const DEFAULT_FEATURES = {
+  gallery: true, socialAccounts: true, posts: true,
+  scheduler: true, analytics: true, notifications: true, settings: true,
+};
+
 const formatUser = (u) => ({
   id: u._id,
   name: u.name,
@@ -11,10 +16,8 @@ const formatUser = (u) => ({
   verified: u.verified,
   isSuperAdmin: u.isSuperAdmin || false,
   accountStatus: u.accountStatus || 'active',
-  enabledFeatures: u.enabledFeatures || {
-    gallery: true, socialAccounts: true, posts: true,
-    scheduler: true, analytics: true, notifications: true, settings: true,
-  },
+  // Always merge with defaults so users created before the field existed still get all features
+  enabledFeatures: { ...DEFAULT_FEATURES, ...(u.enabledFeatures?.toObject ? u.enabledFeatures.toObject() : (u.enabledFeatures || {})) },
   avatar: u.avatar,
   phone: u.phone,
   bio: u.bio,

@@ -10,6 +10,7 @@ router.get('/stats', admin.getStats);
 router.get('/users', admin.listUsers);
 router.get('/users/:id', admin.getUser);
 router.patch('/users/:id/status', admin.updateUserStatus);
+router.patch('/users/:id/verify', admin.verifyUser);
 router.patch('/users/:id/features', admin.updateUserFeatures);
 router.delete('/users/:id', admin.deleteUser);
 router.get('/defaults', admin.getDefaults);

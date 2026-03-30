@@ -8,6 +8,37 @@ exports.requireSuperAdmin = (req, res, next) => {
   next();
 };
 
+const DEFAULT_FEATURES = {
+  gallery: true, socialAccounts: true, posts: true,
+  scheduler: true, analytics: true, notifications: true, settings: true,
+};
+
+// Merge user's enabledFeatures with defaults (handles users created before the field existed)
+const mergeFeatures = (userFeatures) => {
+  const f = userFeatures?.toObject ? userFeatures.toObject() : (userFeatures || {});
+  return { ...DEFAULT_FEATURES, ...f };
+};
+
+// Helper to format a user for admin responses
+const formatAdminUser = (u) => {
+  const obj = u.toObject ? u.toObject() : u;
+  return {
+    id: obj._id.toString(),
+    name: obj.name,
+    email: obj.email,
+    roles: obj.roles,
+    verified: obj.verified,
+    accountStatus: obj.accountStatus || 'active',
+    enabledFeatures: mergeFeatures(obj.enabledFeatures),
+    createdAt: obj.createdAt,
+    avatar: obj.avatar || null,
+    phone: obj.phone,
+    bio: obj.bio,
+    country: obj.country,
+    city: obj.city,
+  };
+};
+
 // GET /api/admin/users — list all non-superadmin users
 exports.listUsers = async (req, res) => {
   try {
@@ -21,9 +52,10 @@ exports.listUsers = async (req, res) => {
       ];
     }
     const users = await User.find(query)
-      .select('name email roles verified accountStatus enabledFeatures createdAt avatar')
+      .select('name email roles verified accountStatus enabledFeatures createdAt avatar phone bio country city')
       .sort({ createdAt: -1 });
-    res.json({ users });
+
+    res.json({ users: users.map(formatAdminUser) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -41,9 +73,24 @@ exports.updateUserStatus = async (req, res) => {
       { _id: req.params.id, isSuperAdmin: { $ne: true } },
       { accountStatus: status },
       { new: true }
-    ).select('name email roles accountStatus enabledFeatures');
+    ).select('name email roles verified accountStatus enabledFeatures createdAt avatar phone bio country city');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ user });
+    res.json({ user: formatAdminUser(user) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/admin/users/:id/verify — superadmin manually verifies a user's email
+exports.verifyUser = async (req, res) => {
+  try {
+    const user = await User.findOneAndUpdate(
+      { _id: req.params.id, isSuperAdmin: { $ne: true } },
+      { verified: true, verificationToken: undefined, verificationTokenExpires: undefined },
+      { new: true }
+    ).select('name email roles verified accountStatus enabledFeatures createdAt avatar phone bio country city');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ user: formatAdminUser(user) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -56,20 +103,27 @@ exports.updateUserFeatures = async (req, res) => {
     if (!enabledFeatures || typeof enabledFeatures !== 'object') {
       return res.status(400).json({ error: 'enabledFeatures object required' });
     }
-    const update = {};
     const allowed = ['gallery', 'socialAccounts', 'posts', 'scheduler', 'analytics', 'notifications', 'settings'];
+    const update = {};
     for (const key of allowed) {
       if (typeof enabledFeatures[key] === 'boolean') {
         update[`enabledFeatures.${key}`] = enabledFeatures[key];
       }
     }
+
+    // Ensure enabledFeatures is initialized with defaults before patching
+    const defaults = { gallery: true, socialAccounts: true, posts: true, scheduler: true, analytics: true, notifications: true, settings: true };
     const user = await User.findOneAndUpdate(
       { _id: req.params.id, isSuperAdmin: { $ne: true } },
-      { $set: update },
+      {
+        $set: update,
+        $setOnInsert: { enabledFeatures: defaults }, // only sets if doc is new (upsert)
+      },
       { new: true }
     ).select('name email roles accountStatus enabledFeatures');
+
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ user });
+    res.json({ user: formatAdminUser(user) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -115,9 +169,6 @@ exports.getStats = async (req, res) => {
 };
 
 // ── Global navigation defaults ────────────────────────────────────────────────
-// Store defaults in a simple in-memory + DB approach using a special "config" doc
-// We'll use a dedicated collection via a simple model
-
 const mongoose = require('mongoose');
 
 // Lazy-create a GlobalConfig model
@@ -131,11 +182,6 @@ const getGlobalConfig = () => {
     GlobalConfig = mongoose.models.GlobalConfig || mongoose.model('GlobalConfig', schema);
   }
   return GlobalConfig;
-};
-
-const DEFAULT_FEATURES = {
-  gallery: true, socialAccounts: true, posts: true,
-  scheduler: true, analytics: true, notifications: true, settings: true,
 };
 
 // GET /api/admin/defaults — get current global nav defaults

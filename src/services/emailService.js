@@ -1,7 +1,47 @@
 const nodemailer = require('nodemailer');
 
-// Create reusable transporter
-// Uses port 465 (SSL) by default — port 587 (STARTTLS) is blocked on many cloud hosts (Render, Railway, etc.)
+// ── Transport strategy ────────────────────────────────────────────────────────
+// Production (Render/cloud): set RESEND_API_KEY → uses Resend HTTPS API (no SMTP port needed)
+// Development (local):       uses nodemailer with Gmail SMTP
+//
+// Get a free Resend key at https://resend.com (3,000 emails/month free).
+// Add RESEND_API_KEY and RESEND_FROM_EMAIL to your Render environment variables.
+
+const sendViaResend = async (to, subject, html) => {
+  const { Resend } = require('resend');
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const from = `${process.env.EMAIL_FROM_NAME || 'BMS Engage'} <${process.env.RESEND_FROM_EMAIL || 'noreply@bmsengafe.com'}>`;
+  const { error } = await resend.emails.send({ from, to, subject, html });
+  if (error) throw new Error(error.message);
+};
+
+const sendViaSMTP = async (to, subject, html) => {
+  const port = parseInt(process.env.EMAIL_PORT) || 465;
+  const secure = port === 465;
+  const transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port,
+    secure,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 8000,
+  });
+  await transporter.sendMail({
+    from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
+    to, subject, html,
+  });
+};
+
+// Unified send — uses Resend if API key is set, otherwise SMTP (local dev)
+const sendEmail = async (to, subject, html) => {
+  if (process.env.RESEND_API_KEY) {
+    return sendViaResend(to, subject, html);
+  }
+  return sendViaSMTP(to, subject, html);
+};
+
+// Create reusable transporter (kept for testEmailConfig local check)
 const createTransporter = () => {
   const port = parseInt(process.env.EMAIL_PORT) || 465;
   const secure = port === 465;
@@ -13,7 +53,6 @@ const createTransporter = () => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    // Short timeouts — email is fire-and-forget, fail fast
     connectionTimeout: 5000,
     greetingTimeout: 5000,
     socketTimeout: 8000,
@@ -414,22 +453,12 @@ const getNotificationEmailTemplate = (userName, notificationType, notificationDa
 // Send verification email
 const sendVerificationEmail = async (email, userName, verificationToken) => {
   try {
-    const transporter = createTransporter();
-    
     const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
-    
-    const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: email,
-      subject: 'Verify Your Email - BMS Engage',
-      html: getVerificationEmailTemplate(userName, verificationLink),
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Verification email sent to ${email}: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    await sendEmail(email, 'Verify Your Email - BMS Engage', getVerificationEmailTemplate(userName, verificationLink));
+    console.log(`✓ Verification email sent to ${email}`);
+    return { success: true };
   } catch (error) {
-    console.error('Error sending verification email:', error);
+    console.error('Error sending verification email:', error.message);
     throw new Error('Failed to send verification email');
   }
 };
@@ -437,32 +466,26 @@ const sendVerificationEmail = async (email, userName, verificationToken) => {
 // Send password reset email
 const sendPasswordResetEmail = async (email, userName, resetToken) => {
   try {
-    const transporter = createTransporter();
-    
     const resetLink = `${process.env.FRONTEND_URL}/forgot-password?token=${resetToken}`;
-    
-    const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: email,
-      subject: 'Reset Your Password - BMS Engage',
-      html: getPasswordResetEmailTemplate(userName, resetLink),
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Password reset email sent to ${email}: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    await sendEmail(email, 'Reset Your Password - BMS Engage', getPasswordResetEmailTemplate(userName, resetLink));
+    console.log(`✓ Password reset email sent to ${email}`);
+    return { success: true };
   } catch (error) {
-    console.error('Error sending password reset email:', error);
+    console.error('Error sending password reset email:', error.message);
     throw new Error('Failed to send password reset email');
   }
 };
 
 // Test email configuration
 const testEmailConfig = async () => {
+  if (process.env.RESEND_API_KEY) {
+    console.log('✓ Email service: using Resend (production mode)');
+    return true;
+  }
   try {
     const transporter = createTransporter();
     await transporter.verify();
-    console.log('✓ Email service is ready');
+    console.log('✓ Email service: SMTP ready (development mode)');
     return true;
   } catch (error) {
     console.error('✗ Email service configuration error:', error.message);
@@ -473,20 +496,10 @@ const testEmailConfig = async () => {
 // Send welcome email
 const sendWelcomeEmail = async (email, userName) => {
   try {
-    const transporter = createTransporter();
-    
-    const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: email,
-      subject: 'Welcome to BMS Engage! 🎉',
-      html: getWelcomeEmailTemplate(userName),
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Welcome email sent to ${email}: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    await sendEmail(email, 'Welcome to BMS Engage! 🎉', getWelcomeEmailTemplate(userName));
+    console.log(`✓ Welcome email sent to ${email}`);
+    return { success: true };
   } catch (error) {
-    // Never throw — welcome email failure must not break account verification
     console.error('Error sending welcome email:', error.message);
     return { success: false };
   }
@@ -495,23 +508,16 @@ const sendWelcomeEmail = async (email, userName) => {
 // Send notification email
 const sendNotificationEmail = async (email, userName, notificationType, notificationData) => {
   try {
-    const transporter = createTransporter();
     const subjects = {
       login: 'New Login Detected - BMS Engage',
       post_published: 'Post Published Successfully - BMS Engage',
       post_scheduled: 'Post Scheduled - BMS Engage',
     };
-    const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: email,
-      subject: subjects[notificationType] || 'Notification - BMS Engage',
-      html: getNotificationEmailTemplate(userName, notificationType, notificationData),
-    };
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Notification email sent to ${email}: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    const subject = subjects[notificationType] || 'Notification - BMS Engage';
+    await sendEmail(email, subject, getNotificationEmailTemplate(userName, notificationType, notificationData));
+    console.log(`✓ Notification email sent to ${email}`);
+    return { success: true };
   } catch (error) {
-    // Never throw — email failure must not break the calling flow
     console.error('Error sending notification email:', error.message);
     return { success: false };
   }
@@ -572,15 +578,10 @@ const sendMediaShareEmail = async (toEmail, senderName, assetTitle, assetUrl, sh
 </body>
 </html>`;
 
-    const info = await transporter.sendMail({
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: toEmail,
-      subject: `${senderName} shared "${assetTitle}" with you - BMS Engage`,
-      html,
-    });
-    return { success: true, messageId: info.messageId };
+    const info = await sendEmail(toEmail, `${senderName} shared "${assetTitle}" with you - BMS Engage`, html);
+    return { success: true };
   } catch (error) {
-    console.error('Error sending share email:', error);
+    console.error('Error sending share email:', error.message);
     throw new Error('Failed to send share email');
   }
 };
@@ -652,17 +653,11 @@ const sendMediaActivityEmail = async (toEmail, toName, activityType, data) => {
 </html>`;
 
   try {
-    const transporter = createTransporter();
-    const info = await transporter.sendMail({
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: toEmail,
-      subject: cfg.subject,
-      html,
-    });
-    console.log(`✓ Media activity email (${activityType}) sent to ${toEmail}: ${info.messageId}`);
+    await sendEmail(toEmail, cfg.subject, html);
+    console.log(`✓ Media activity email (${activityType}) sent to ${toEmail}`);
     return { success: true };
   } catch (error) {
-    console.error('Error sending media activity email:', error);
+    console.error('Error sending media activity email:', error.message);
   }
 };
 
@@ -713,16 +708,11 @@ const sendTeamInviteEmail = async (toEmail, toName, inviterName, agencyName) => 
     </td></tr>
   </table>
 </body></html>`;
-    const info = await transporter.sendMail({
-      from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.EMAIL_FROM}>`,
-      to: toEmail,
-      subject: `${inviterName} invited you to join "${agencyName}" on BMS Engage`,
-      html,
-    });
-    console.log(`✓ Team invite email sent to ${toEmail}: ${info.messageId}`);
+    await sendEmail(toEmail, `${inviterName} invited you to join "${agencyName}" on BMS Engage`, html);
+    console.log(`✓ Team invite email sent to ${toEmail}`);
     return { success: true };
   } catch (error) {
-    console.error('Error sending team invite email:', error);
+    console.error('Error sending team invite email:', error.message);
   }
 };
 
