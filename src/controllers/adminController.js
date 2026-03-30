@@ -113,3 +113,75 @@ exports.getStats = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ── Global navigation defaults ────────────────────────────────────────────────
+// Store defaults in a simple in-memory + DB approach using a special "config" doc
+// We'll use a dedicated collection via a simple model
+
+const mongoose = require('mongoose');
+
+// Lazy-create a GlobalConfig model
+let GlobalConfig;
+const getGlobalConfig = () => {
+  if (!GlobalConfig) {
+    const schema = new mongoose.Schema({
+      key: { type: String, unique: true },
+      value: mongoose.Schema.Types.Mixed,
+    });
+    GlobalConfig = mongoose.models.GlobalConfig || mongoose.model('GlobalConfig', schema);
+  }
+  return GlobalConfig;
+};
+
+const DEFAULT_FEATURES = {
+  gallery: true, socialAccounts: true, posts: true,
+  scheduler: true, analytics: true, notifications: true, settings: true,
+};
+
+// GET /api/admin/defaults — get current global nav defaults
+exports.getDefaults = async (req, res) => {
+  try {
+    const Config = getGlobalConfig();
+    const doc = await Config.findOne({ key: 'navDefaults' });
+    res.json({ defaults: doc?.value || DEFAULT_FEATURES });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/admin/defaults — set global nav defaults + optionally apply to all users
+exports.setDefaults = async (req, res) => {
+  try {
+    const { enabledFeatures, applyToAll = false } = req.body;
+    if (!enabledFeatures || typeof enabledFeatures !== 'object') {
+      return res.status(400).json({ error: 'enabledFeatures object required' });
+    }
+
+    const allowed = ['gallery', 'socialAccounts', 'posts', 'scheduler', 'analytics', 'notifications', 'settings'];
+    const clean = {};
+    for (const k of allowed) {
+      if (typeof enabledFeatures[k] === 'boolean') clean[k] = enabledFeatures[k];
+    }
+
+    // Save as global default
+    const Config = getGlobalConfig();
+    await Config.findOneAndUpdate(
+      { key: 'navDefaults' },
+      { key: 'navDefaults', value: { ...DEFAULT_FEATURES, ...clean } },
+      { upsert: true, new: true }
+    );
+
+    // Optionally apply to all non-superadmin users
+    if (applyToAll) {
+      const update = {};
+      for (const [k, v] of Object.entries(clean)) {
+        update[`enabledFeatures.${k}`] = v;
+      }
+      await User.updateMany({ isSuperAdmin: { $ne: true } }, { $set: update });
+    }
+
+    res.json({ message: applyToAll ? 'Defaults saved and applied to all users' : 'Defaults saved', defaults: { ...DEFAULT_FEATURES, ...clean } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
