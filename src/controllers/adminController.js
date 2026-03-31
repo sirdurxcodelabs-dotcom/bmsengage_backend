@@ -111,14 +111,16 @@ exports.updateUserFeatures = async (req, res) => {
       }
     }
 
-    // Ensure enabledFeatures is initialized with defaults before patching
+    // First ensure enabledFeatures subdoc exists with defaults (avoids dot-path conflict)
     const defaults = { gallery: true, socialAccounts: true, posts: true, scheduler: true, analytics: true, notifications: true, settings: true };
+    await User.updateOne(
+      { _id: req.params.id, isSuperAdmin: { $ne: true }, enabledFeatures: { $exists: false } },
+      { $set: { enabledFeatures: defaults } }
+    );
+
     const user = await User.findOneAndUpdate(
       { _id: req.params.id, isSuperAdmin: { $ne: true } },
-      {
-        $set: update,
-        $setOnInsert: { enabledFeatures: defaults }, // only sets if doc is new (upsert)
-      },
+      { $set: update },
       { new: true }
     ).select('name email roles accountStatus enabledFeatures');
 
