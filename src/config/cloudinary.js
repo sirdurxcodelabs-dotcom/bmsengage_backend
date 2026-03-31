@@ -8,24 +8,51 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+const VIDEO_MAX = 2 * 1024 * 1024 * 1024; // 2 GB
+
+// Validate by file extension — MIME types for design files are unreliable across OSes
+const ALLOWED_MEDIA_EXTS = new Set([
+  // Images
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'tif', 'avif', 'heic', 'heif', 'ico',
+  // Design / graphics
+  'psd', 'psb', 'ai', 'eps', 'indd', 'indt', 'xd', 'sketch', 'fig',
+  'afdesign', 'afphoto', 'cdr', 'xcf', 'raw', 'cr2', 'nef', 'arw', 'dng',
+  // Documents
+  'pdf',
+  // Video
+  'mp4', 'mov', 'avi', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'flv', 'wmv', 'ogv', 'm4v', 'ts',
+]);
+
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'avi', 'mkv', 'webm', 'mpeg', 'mpg', '3gp', 'flv', 'wmv', 'ogv', 'm4v', 'ts']);
+
+const getExt = (filename = '') => (filename.split('.').pop() || '').toLowerCase();
+
 // ── Media upload (all types) ──────────────────────────────────────────────────
 const storage = new CloudinaryStorage({
   cloudinary,
-  params: async (req, file) => {
-    const isVideo = file.mimetype.startsWith('video/');
-    const isPdf = file.mimetype === 'application/pdf';
+  params: async (_req, file) => {
+    const ext = getExt(file.originalname);
+    const isVideo = VIDEO_EXTS.has(ext) || file.mimetype.startsWith('video/');
+    const isImage = !isVideo && file.mimetype.startsWith('image/');
     return {
       folder: 'bmsengage/media',
-      resource_type: isVideo ? 'video' : isPdf ? 'raw' : 'image',
-      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'mp4', 'mov', 'avi', 'pdf'],
-      transformation: isVideo ? [] : [{ quality: 'auto', fetch_format: 'auto' }],
+      // Images → image, videos → video, everything else (PSD, AI, PDF, RAW…) → raw
+      resource_type: isVideo ? 'video' : isImage ? 'image' : 'raw',
+      transformation: isImage ? [{ quality: 'auto', fetch_format: 'auto' }] : [],
     };
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024 },
+  limits: { fileSize: VIDEO_MAX }, // 2 GB ceiling; design files are typically much smaller
+  fileFilter: (_req, file, cb) => {
+    const ext = getExt(file.originalname);
+    if (!ALLOWED_MEDIA_EXTS.has(ext)) {
+      return cb(new Error(`Unsupported file type: .${ext || 'unknown'}`));
+    }
+    cb(null, true);
+  },
 });
 
 // ── Avatar upload (images only) ───────────────────────────────────────────────
@@ -72,4 +99,24 @@ const uploadAgencyLogo = multer({
   },
 });
 
-module.exports = { cloudinary, upload, uploadAvatar, uploadAgencyLogo };
+// ── Startup logo upload (images only) ────────────────────────────────────────
+const startupLogoStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'bmsengage/startup_logos',
+    resource_type: 'image',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
+    transformation: [{ width: 400, height: 400, crop: 'limit', quality: 'auto', fetch_format: 'auto' }],
+  },
+});
+
+const uploadStartupLogo = multer({
+  storage: startupLogoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('Only image files allowed'));
+    cb(null, true);
+  },
+});
+
+module.exports = { cloudinary, upload, uploadAvatar, uploadAgencyLogo, uploadStartupLogo };
