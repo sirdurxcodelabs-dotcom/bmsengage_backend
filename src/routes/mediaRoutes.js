@@ -7,11 +7,14 @@ const { upload } = require('../config/cloudinary');
 // Wrap async middleware so unhandled promise rejections go to next(err)
 const asyncMw = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// Wrap multer so file upload errors return JSON instead of the global 500 handler
+// Wrap multer so file upload errors return proper JSON (413 for size, 400 for others)
 const handleUpload = (multerMw) => (req, res, next) => {
   multerMw(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message || 'File upload failed' });
-    next();
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'File too large. Videos must be under 2 GB, images/graphics under 100 MB.' });
+    }
+    return res.status(400).json({ error: err.message || 'File upload failed' });
   });
 };
 
