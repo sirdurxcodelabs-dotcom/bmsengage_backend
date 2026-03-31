@@ -3,7 +3,9 @@ const User = require('../models/User');
 
 const auth = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    // Accept token from Authorization header OR ?token= query param (used for OAuth redirects)
+    const headerToken = req.header('Authorization')?.replace('Bearer ', '');
+    const token = headerToken || req.query.token;
     if (!token) return res.status(401).json({ error: 'Authentication required' });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

@@ -1,63 +1,123 @@
 const axios = require('axios');
+const { withRetry } = require('../utils/apiRetry');
 
-const publishToTwitter = async (post, account) => {
-  // Twitter API v2 endpoint
-  const url = 'https://api.twitter.com/2/tweets';
+const BASE = 'https://api.twitter.com';
 
-  const tweetData = {
-    text: post.content
-  };
-
-  // Add media if present
-  if (post.mediaUrls && post.mediaUrls.length > 0) {
-    // Note: Media must be uploaded first using Twitter's media upload endpoint
-    // This is simplified - in production, you'd upload media first and get media_ids
-    tweetData.media = {
-      media_ids: [] // Add uploaded media IDs here
-    };
-  }
-
-  try {
-    const response = await axios.post(url, tweetData, {
-      headers: {
-        'Authorization': `Bearer ${account.accessToken}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    return {
-      platformPostId: response.data.data.id,
-      url: `https://twitter.com/i/web/status/${response.data.data.id}`
-    };
-  } catch (error) {
-    throw new Error(`Twitter API error: ${error.response?.data?.detail || error.message}`);
-  }
+/**
+ * Build the OAuth 2.0 PKCE authorization URL.
+ */
+const getAuthUrl = (state, codeChallenge) => {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.TWITTER_CLIENT_ID,
+    redirect_uri: process.env.TWITTER_CALLBACK_URL,
+    scope: 'tweet.read tweet.write users.read offline.access',
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'plain',
+  });
+  return `${BASE}/i/oauth2/authorize?${params.toString()}`;
 };
 
-const refreshTwitterToken = async (account) => {
-  // Implement OAuth2 token refresh logic
-  // Twitter OAuth2 token refresh endpoint
-  const url = 'https://api.twitter.com/2/oauth2/token';
-  
-  try {
-    const response = await axios.post(url, {
-      grant_type: 'refresh_token',
-      refresh_token: account.refreshToken,
-      client_id: process.env.TWITTER_CLIENT_ID
-    }, {
+/**
+ * Exchange authorization code for tokens (OAuth 2.0 PKCE).
+ */
+const exchangeCodeForToken = async (code, codeVerifier) => {
+  const credentials = Buffer.from(
+    `${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`
+  ).toString('base64');
+
+  const res = await withRetry(() => axios.post(
+    `${BASE}/2/oauth2/token`,
+    new URLSearchParams({
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: process.env.TWITTER_CALLBACK_URL,
+      code_verifier: codeVerifier,
+    }).toString(),
+    {
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${credentials}`,
       },
-      auth: {
-        username: process.env.TWITTER_CLIENT_ID,
-        password: process.env.TWITTER_CLIENT_SECRET
-      }
-    });
-
-    return response.data.access_token;
-  } catch (error) {
-    throw new Error('Failed to refresh Twitter token');
-  }
+    }
+  ));
+  return res.data; // { access_token, refresh_token, expires_in, scope }
 };
 
-module.exports = { publishToTwitter, refreshTwitterToken };
+/**
+ * Refresh an expired access token.
+ */
+const refreshAccessToken = async (refreshToken) => {
+  const credentials = Buffer.from(
+    `${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`
+  ).toString('base64');
+
+  const res = await withRetry(() => axios.post(
+    `${BASE}/2/oauth2/token`,
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${credentials}`,
+      },
+    }
+  ));
+  return res.data;
+};
+
+/**
+ * Fetch the authenticated user's profile.
+ */
+const getUserProfile = async (accessToken) => {
+  const res = await withRetry(() => axios.get(`${BASE}/2/users/me`, {
+    params: { 'user.fields': 'id,name,username,profile_image_url' },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }));
+  return res.data.data;
+};
+
+/**
+ * Post a tweet. Optionally attach uploaded media IDs.
+ */
+const publishTweet = async (accessToken, text, mediaIds = []) => {
+  const body = { text };
+  if (mediaIds.length > 0) body.media = { media_ids: mediaIds };
+
+  const res = await withRetry(() => axios.post(`${BASE}/2/tweets`, body, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  }));
+  return res.data.data; // { id, text }
+};
+
+/**
+ * Upload media to Twitter and return the media_id.
+ */
+const uploadMedia = async (accessToken, mediaBuffer, mimeType) => {
+  const res = await withRetry(() => axios.post(
+    'https://upload.twitter.com/1.1/media/upload.json',
+    new URLSearchParams({ media_data: mediaBuffer.toString('base64') }).toString(),
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    }
+  ));
+  return res.data.media_id_string;
+};
+
+module.exports = {
+  getAuthUrl,
+  exchangeCodeForToken,
+  refreshAccessToken,
+  getUserProfile,
+  publishTweet,
+  uploadMedia,
+};

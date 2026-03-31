@@ -1,73 +1,142 @@
 const axios = require('axios');
+const { withRetry } = require('../utils/apiRetry');
 
-const publishToLinkedIn = async (post, account) => {
-  const url = 'https://api.linkedin.com/v2/ugcPosts';
+const BASE = 'https://api.linkedin.com/v2';
 
-  const postData = {
-    author: `urn:li:person:${account.accountId}`,
+/**
+ * Build the OAuth 2.0 authorization URL.
+ */
+const getAuthUrl = (state) => {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.LINKEDIN_CLIENT_ID,
+    redirect_uri: process.env.LINKEDIN_CALLBACK_URL,
+    state,
+    scope: 'openid profile email w_member_social',
+  });
+  return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
+};
+
+/**
+ * Exchange authorization code for access token.
+ */
+const exchangeCodeForToken = async (code) => {
+  const res = await withRetry(() => axios.post(
+    'https://www.linkedin.com/oauth/v2/accessToken',
+    new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: process.env.LINKEDIN_CALLBACK_URL,
+      client_id: process.env.LINKEDIN_CLIENT_ID,
+      client_secret: process.env.LINKEDIN_CLIENT_SECRET,
+    }).toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  ));
+  return res.data; // { access_token, expires_in, refresh_token (optional) }
+};
+
+/**
+ * Refresh an expired access token (if refresh_token is available).
+ */
+const refreshAccessToken = async (refreshToken) => {
+  const res = await withRetry(() => axios.post(
+    'https://www.linkedin.com/oauth/v2/accessToken',
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: process.env.LINKEDIN_CLIENT_ID,
+      client_secret: process.env.LINKEDIN_CLIENT_SECRET,
+    }).toString(),
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+  ));
+  return res.data;
+};
+
+/**
+ * Fetch the authenticated user's profile.
+ */
+const getUserProfile = async (accessToken) => {
+  const res = await withRetry(() => axios.get(`${BASE}/userinfo`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }));
+  return res.data; // { sub, name, email, picture }
+};
+
+/**
+ * Publish a text/image post to LinkedIn.
+ */
+const publishPost = async (accessToken, personUrn, text, mediaUrn = null) => {
+  const body = {
+    author: personUrn,
     lifecycleState: 'PUBLISHED',
     specificContent: {
       'com.linkedin.ugc.ShareContent': {
-        shareCommentary: {
-          text: post.content
-        },
-        shareMediaCategory: post.mediaUrls?.length > 0 ? 'IMAGE' : 'NONE'
-      }
+        shareCommentary: { text },
+        shareMediaCategory: mediaUrn ? 'IMAGE' : 'NONE',
+      },
     },
-    visibility: {
-      'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC'
-    }
+    visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
   };
 
-  // Add media if present
-  if (post.mediaUrls && post.mediaUrls.length > 0) {
-    postData.specificContent['com.linkedin.ugc.ShareContent'].media = post.mediaUrls.map(url => ({
-      status: 'READY',
-      description: {
-        text: 'Image'
+  if (mediaUrn) {
+    body.specificContent['com.linkedin.ugc.ShareContent'].media = [
+      { status: 'READY', media: mediaUrn },
+    ];
+  }
+
+  const res = await withRetry(() => axios.post(`${BASE}/ugcPosts`, body, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'X-Restli-Protocol-Version': '2.0.0',
+    },
+  }));
+  return res.data; // { id }
+};
+
+/**
+ * Upload an image to LinkedIn and return the media URN.
+ */
+const uploadImage = async (accessToken, personUrn, imageBuffer) => {
+  // 1. Register upload
+  const registerRes = await withRetry(() => axios.post(
+    `${BASE}/assets?action=registerUpload`,
+    {
+      registerUploadRequest: {
+        recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+        owner: personUrn,
+        serviceRelationships: [
+          {
+            relationshipType: 'OWNER',
+            identifier: 'urn:li:userGeneratedContent',
+          },
+        ],
       },
-      media: url,
-      title: {
-        text: 'Post Image'
-      }
-    }));
-  }
-
-  try {
-    const response = await axios.post(url, postData, {
+    },
+    {
       headers: {
-        'Authorization': `Bearer ${account.accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'X-Restli-Protocol-Version': '2.0.0'
-      }
-    });
+      },
+    }
+  ));
 
-    return {
-      platformPostId: response.headers['x-restli-id'],
-      url: `https://www.linkedin.com/feed/update/${response.headers['x-restli-id']}`
-    };
-  } catch (error) {
-    throw new Error(`LinkedIn API error: ${error.response?.data?.message || error.message}`);
-  }
+  const uploadUrl = registerRes.data.value.uploadMechanism['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'].uploadUrl;
+  const asset = registerRes.data.value.asset;
+
+  // 2. Upload binary
+  await withRetry(() => axios.put(uploadUrl, imageBuffer, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }));
+
+  return asset;
 };
 
-const refreshLinkedInToken = async (account) => {
-  const url = 'https://www.linkedin.com/oauth/v2/accessToken';
-  
-  try {
-    const response = await axios.post(url, null, {
-      params: {
-        grant_type: 'refresh_token',
-        refresh_token: account.refreshToken,
-        client_id: process.env.LINKEDIN_CLIENT_ID,
-        client_secret: process.env.LINKEDIN_CLIENT_SECRET
-      }
-    });
-
-    return response.data.access_token;
-  } catch (error) {
-    throw new Error('Failed to refresh LinkedIn token');
-  }
+module.exports = {
+  getAuthUrl,
+  exchangeCodeForToken,
+  refreshAccessToken,
+  getUserProfile,
+  publishPost,
+  uploadImage,
 };
-
-module.exports = { publishToLinkedIn, refreshLinkedInToken };
