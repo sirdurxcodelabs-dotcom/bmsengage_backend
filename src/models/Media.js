@@ -92,8 +92,8 @@ const mediaSchema = new mongoose.Schema({
   tags: [{ type: String, trim: true }],
   status: {
     type: String,
-    enum: ['Published', 'Draft', 'Archived'],
-    default: 'Published',
+    enum: ['In Development', 'Sent for Correction', 'Corrected', 'Approved', 'Archived'],
+    default: 'In Development',
   },
   visibility: {
     type: String,

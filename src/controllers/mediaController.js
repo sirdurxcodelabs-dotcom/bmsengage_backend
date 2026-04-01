@@ -107,7 +107,7 @@ exports.uploadSingle = async (req, res) => {
       description: description || '',
       category: category || 'Image',
       tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-      status: status || 'Published',
+      status: 'In Development',
       visibility: visibility || 'Public',
       url: cloudResult.path,
       publicId: cloudResult.filename,
@@ -190,7 +190,7 @@ exports.uploadMultiple = async (req, res) => {
           description: '',
           category: category || 'Image',
           tags: [],
-          status: status || 'Published',
+          status: 'In Development',
           visibility: visibility || 'Public',
           url: file.path,
           publicId: file.filename,
@@ -247,6 +247,8 @@ exports.addVariant = async (req, res) => {
 
       if (correction) {
         correction.status = 'resolved';
+        // Auto-transition: variant uploaded as correction reply → Corrected
+        media.status = 'Corrected';
         try {
           const { createNotification } = require('../controllers/notificationController');
           await createNotification(
@@ -747,6 +749,8 @@ exports.addCorrection = async (req, res) => {
       text: text.trim(),
       ...(timestamp ? { timestamp } : {}),
     });
+    // Auto-transition: correction requested → Sent for Correction
+    media.status = 'Sent for Correction';
     await media.save();
 
     // Notify the original uploader (Creative) — they need to fix it
@@ -860,6 +864,11 @@ exports.approveAsset = async (req, res) => {
     media.approvalStatus = status;
     media.approvedBy = req.user._id;
     media.approvedAt = new Date();
+    if (status === 'approved') {
+      media.status = 'Approved';
+    } else if (status === 'rejected') {
+      media.status = media.variants.length > 0 ? 'Corrected' : 'In Development';
+    }
     await media.save();
 
     // Notify the uploader
