@@ -61,6 +61,7 @@ const agencySchema = new mongoose.Schema({
   teamSize: String,
   logo: String,
   description: String,
+  enableStartups: { type: Boolean, default: false }, // agency owner toggles this on/off
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({

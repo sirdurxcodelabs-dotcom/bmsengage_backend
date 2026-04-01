@@ -15,6 +15,7 @@ const userRoutes = require('./routes/userRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const startupRoutes = require('./routes/startupRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 const app = express();
 
@@ -37,6 +38,21 @@ const startServer = async () => {
 
     console.log('✓ Database connected');
     console.log('✓ Scheduler started');
+
+    // ── AI service status ──────────────────────────────────────────────────
+    const hasOpenAI = process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('your_') && !process.env.OPENAI_API_KEY.includes('sk-...');
+    const hasHF     = process.env.HUGGINGFACE_API_KEY && !process.env.HUGGINGFACE_API_KEY.includes('your_') && !process.env.HUGGINGFACE_API_KEY.includes('hf_...');
+
+    if (hasOpenAI && hasHF) {
+      console.log('✓ AI caption: OpenAI ✅  +  HuggingFace ✅  (OpenAI used first)');
+    } else if (hasOpenAI) {
+      console.log('✓ AI caption: OpenAI ✅  (add HUGGINGFACE_API_KEY for fallback)');
+    } else if (hasHF) {
+      console.log('✓ AI caption: HuggingFace ✅  (add OPENAI_API_KEY for better quality)');
+    } else {
+      console.log('⚠ AI caption: no API keys set — using HuggingFace free public API (rate-limited)');
+      console.log('  → Add OPENAI_API_KEY or HUGGINGFACE_API_KEY to .env for reliable AI captions');
+    }
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
@@ -56,6 +72,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/startups', startupRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

@@ -20,5 +20,6 @@ router.get('/callback/tiktok',    ctrl.tiktokCallback);
 router.get('/accounts',                    auth, ctrl.getConnectedAccounts);
 router.delete('/accounts/:id',             auth, ctrl.disconnectAccount);
 router.post('/accounts/:id/refresh-token', auth, ctrl.refreshAccountToken);
+router.get('/accounts/:id/insights',       auth, ctrl.getAccountInsights);
 
 module.exports = router;

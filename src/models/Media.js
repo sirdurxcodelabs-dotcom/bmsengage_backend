@@ -84,6 +84,8 @@ const mediaSchema = new mongoose.Schema({
   startupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Startup', default: null },
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
+  // targetDate: the week/date this asset is intended for (e.g. "this week", "next week")
+  targetDate: { type: Date, default: null },
   category: {
     type: String,
     enum: ['Image', 'Video', 'Flyer', 'Graphics'],

@@ -230,10 +230,13 @@ exports.disable2FA = async (req, res) => {
 // PATCH /api/settings/agency
 exports.updateAgency = async (req, res) => {
   try {
-    const { name, website, industry, teamSize, description } = req.body;
+    const { name, website, industry, teamSize, description, enableStartups } = req.body;
     const user = await User.findById(req.user._id);
     if (!user.agency) user.agency = {};
-    Object.assign(user.agency, { name, website, industry, teamSize, description });
+    Object.assign(user.agency, {
+      name, website, industry, teamSize, description,
+      ...(enableStartups !== undefined && { enableStartups: Boolean(enableStartups) }),
+    });
     user.markModified('agency');
     await user.save();
     res.json({ agency: user.agency });

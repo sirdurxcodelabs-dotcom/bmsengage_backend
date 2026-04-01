@@ -299,3 +299,136 @@ exports.refreshAccountToken = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ── Account Insights ──────────────────────────────────────────────────────────
+// GET /api/social/accounts/:id/insights
+// Fetches real profile stats from each platform using the stored access token.
+// Falls back to null fields if the platform API is unavailable or token expired.
+exports.getAccountInsights = async (req, res) => {
+  try {
+    const account = await SocialAccount.findOne({ _id: req.params.id, userId: req.user._id, isActive: true });
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+
+    const token = decrypt(account.accessToken);
+    if (!token) return res.status(400).json({ error: 'No access token available' });
+
+    let insights = {
+      platform: account.platform,
+      username: account.username,
+      displayName: account.displayName,
+      avatar: account.avatar,
+      followers: null,
+      following: null,
+      posts: null,
+      reach: null,
+      engagement: null,
+      impressions: null,
+      topPosts: [],
+      recentActivity: [],
+      profileUrl: null,
+      error: null,
+    };
+
+    try {
+      if (account.platform === 'twitter') {
+        // Twitter v2 — user metrics
+        const { default: axios } = await import('axios');
+        const userRes = await axios.get(`https://api.twitter.com/2/users/me`, {
+          params: { 'user.fields': 'public_metrics,profile_image_url,description,url' },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const u = userRes.data.data;
+        insights.followers = u.public_metrics?.followers_count ?? null;
+        insights.following = u.public_metrics?.following_count ?? null;
+        insights.posts = u.public_metrics?.tweet_count ?? null;
+        insights.profileUrl = `https://twitter.com/${u.username || account.username}`;
+
+        // Recent tweets
+        const tweetsRes = await axios.get(`https://api.twitter.com/2/users/${u.id}/tweets`, {
+          params: { max_results: 5, 'tweet.fields': 'public_metrics,created_at', expansions: 'attachments.media_keys' },
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => null);
+        if (tweetsRes?.data?.data) {
+          insights.topPosts = tweetsRes.data.data.slice(0, 3).map(t => ({
+            id: t.id,
+            content: t.text,
+            likes: t.public_metrics?.like_count || 0,
+            comments: t.public_metrics?.reply_count || 0,
+            shares: t.public_metrics?.retweet_count || 0,
+            url: `https://twitter.com/i/web/status/${t.id}`,
+            createdAt: t.created_at,
+          }));
+        }
+      }
+
+      else if (account.platform === 'linkedin') {
+        const { default: axios } = await import('axios');
+        // LinkedIn basic profile
+        const profileRes = await axios.get('https://api.linkedin.com/v2/userinfo', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        insights.displayName = profileRes.data.name || insights.displayName;
+        insights.avatar = profileRes.data.picture || insights.avatar;
+        insights.profileUrl = `https://linkedin.com/in/${account.username}`;
+        // Note: follower counts require r_organization_social scope — show null if unavailable
+      }
+
+      else if (account.platform === 'meta') {
+        const { default: axios } = await import('axios');
+        const BASE = 'https://graph.facebook.com/v19.0';
+        // User profile
+        const profileRes = await axios.get(`${BASE}/me`, {
+          params: { fields: 'id,name,picture,followers_count', access_token: token },
+        }).catch(() => null);
+        if (profileRes?.data) {
+          insights.followers = profileRes.data.followers_count ?? null;
+          insights.profileUrl = `https://facebook.com/${profileRes.data.id}`;
+        }
+        // Page insights if page token available
+        if (account.meta?.pageId) {
+          const pageToken = decrypt(account.meta.pageAccessToken);
+          if (pageToken) {
+            const pageRes = await axios.get(`${BASE}/${account.meta.pageId}`, {
+              params: { fields: 'fan_count,followers_count,posts{message,created_time,likes.summary(true),comments.summary(true),shares}', access_token: pageToken },
+            }).catch(() => null);
+            if (pageRes?.data) {
+              insights.followers = pageRes.data.fan_count ?? insights.followers;
+              const pagePosts = pageRes.data.posts?.data || [];
+              insights.topPosts = pagePosts.slice(0, 3).map(p => ({
+                id: p.id,
+                content: p.message || '',
+                likes: p.likes?.summary?.total_count || 0,
+                comments: p.comments?.summary?.total_count || 0,
+                shares: p.shares?.count || 0,
+                url: `https://facebook.com/${p.id}`,
+                createdAt: p.created_time,
+              }));
+            }
+          }
+        }
+      }
+
+      else if (account.platform === 'tiktok') {
+        const { default: axios } = await import('axios');
+        const userRes = await axios.get('https://open.tiktokapis.com/v2/user/info/', {
+          params: { fields: 'open_id,union_id,avatar_url,display_name,follower_count,following_count,likes_count,video_count' },
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => null);
+        if (userRes?.data?.data?.user) {
+          const u = userRes.data.data.user;
+          insights.followers = u.follower_count ?? null;
+          insights.following = u.following_count ?? null;
+          insights.posts = u.video_count ?? null;
+          insights.profileUrl = `https://tiktok.com/@${account.username}`;
+        }
+      }
+    } catch (platformErr) {
+      console.warn(`[insights] ${account.platform} API error:`, platformErr.message);
+      insights.error = `Could not fetch live data: ${platformErr.message}`;
+    }
+
+    res.json({ insights });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

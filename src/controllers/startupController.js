@@ -4,6 +4,7 @@ const { cloudinary } = require('../config/cloudinary');
 
 const fmt = s => ({
   id: s._id, name: s.name, description: s.description,
+  phone: s.phone || '', whatsapp: s.whatsapp || '', email: s.email || '',
   logo: s.logo || null, createdAt: s.createdAt,
 });
 
@@ -20,13 +21,16 @@ exports.listStartups = async (req, res) => {
 // POST /api/startups
 exports.createStartup = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, phone, whatsapp, email } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
     const agencyId = await resolveAgencyOwnerId(req.user);
     if (!agencyId) return res.status(403).json({ error: 'Not part of any agency' });
     if (agencyId.toString() !== req.user._id.toString())
       return res.status(403).json({ error: 'Only the agency owner can add startups' });
-    const startup = await Startup.create({ agencyId, name: name.trim(), description: description?.trim() || '' });
+    const startup = await Startup.create({
+      agencyId, name: name.trim(), description: description?.trim() || '',
+      phone: phone?.trim() || '', whatsapp: whatsapp?.trim() || '', email: email?.trim() || '',
+    });
     res.status(201).json({ startup: fmt(startup) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
@@ -34,13 +38,19 @@ exports.createStartup = async (req, res) => {
 // PATCH /api/startups/:id
 exports.updateStartup = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, phone, whatsapp, email } = req.body;
     const agencyId = await resolveAgencyOwnerId(req.user);
     if (!agencyId || agencyId.toString() !== req.user._id.toString())
       return res.status(403).json({ error: 'Only the agency owner can edit startups' });
     const startup = await Startup.findOneAndUpdate(
       { _id: req.params.id, agencyId },
-      { ...(name && { name: name.trim() }), ...(description !== undefined && { description: description.trim() }) },
+      {
+        ...(name && { name: name.trim() }),
+        ...(description !== undefined && { description: description.trim() }),
+        ...(phone !== undefined && { phone: phone.trim() }),
+        ...(whatsapp !== undefined && { whatsapp: whatsapp.trim() }),
+        ...(email !== undefined && { email: email.trim() }),
+      },
       { new: true }
     );
     if (!startup) return res.status(404).json({ error: 'Startup not found' });

@@ -87,7 +87,7 @@ exports.uploadSingle = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const { title, category, description, tags, status, visibility, startupId } = req.body;
+    const { title, category, description, tags, visibility, startupId, targetDate } = req.body;
     const cloudResult = req.file;
 
     const context = req.user.activeContext || 'personal';
@@ -101,8 +101,8 @@ exports.uploadSingle = async (req, res) => {
       userId: req.user.id,
       context,
       agencyId,
-      // startupId only stored for agency context
       startupId: (context === 'agency' && startupId) ? startupId : null,
+      targetDate: targetDate ? new Date(targetDate) : null,
       title: title || req.file.originalname.split('.')[0],
       description: description || '',
       category: category || 'Image',
@@ -409,7 +409,7 @@ exports.getMediaById = async (req, res) => {
 // PATCH /api/media/:id
 exports.updateMedia = async (req, res) => {
   try {
-    const { title, description, category, tags, status, visibility } = req.body;
+    const { title, description, category, tags, status, visibility, startupId, targetDate } = req.body;
 
     // Only the uploader (userId) can edit — in both personal and agency context
     const media = await Media.findOneAndUpdate(
@@ -421,6 +421,8 @@ exports.updateMedia = async (req, res) => {
         ...(tags !== undefined && { tags: tags.split(',').map(t => t.trim()).filter(Boolean) }),
         ...(status && { status }),
         ...(visibility && { visibility }),
+        ...(startupId !== undefined && { startupId: startupId || null }),
+        ...(targetDate !== undefined && { targetDate: targetDate ? new Date(targetDate) : null }),
         'metadata.modifiedDate': new Date(),
       },
       { new: true }
@@ -570,6 +572,7 @@ const formatMedia = (doc, requestingUserId) => {
     context: obj.context || 'personal',
     agencyId: obj.agencyId?.toString() || null,
     startupId: obj.startupId?.toString() || null,
+    targetDate: obj.targetDate || null,
     approvalStatus: obj.approvalStatus || 'pending',
     approvedBy: obj.approvedBy?.toString() || null,
     approvedAt: obj.approvedAt || null,
