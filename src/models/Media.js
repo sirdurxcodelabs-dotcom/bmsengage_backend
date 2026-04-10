@@ -82,6 +82,8 @@ const mediaSchema = new mongoose.Schema({
   agencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   // startupId: optional — links asset to a specific startup (agency context only)
   startupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Startup', default: null },
+  // campaignEventId: optional — links asset to a campaign event
+  campaignEventId: { type: mongoose.Schema.Types.ObjectId, ref: 'CampaignEvent', default: null },
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
   // targetDate: the week/date this asset is intended for (e.g. "this week", "next week")

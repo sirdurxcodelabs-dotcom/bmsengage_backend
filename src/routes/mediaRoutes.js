@@ -2,12 +2,10 @@ const express = require('express');
 const router = express.Router();
 const mediaController = require('../controllers/mediaController');
 const { auth, requirePermission } = require('../middleware/auth');
-const { upload } = require('../config/cloudinary');
+const { upload, processUpload, processMultiUpload } = require('../config/cloudinary');
 
-// Wrap async middleware so unhandled promise rejections go to next(err)
 const asyncMw = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// Wrap multer so file upload errors return proper JSON (413 for size, 400 for others)
 const handleUpload = (multerMw) => (req, res, next) => {
   multerMw(req, res, (err) => {
     if (!err) return next();
@@ -24,10 +22,11 @@ router.get('/public/:id', mediaController.getPublicMedia);
 // All routes below require auth
 router.use(auth);
 
-// Upload single file
+// Upload single file — multer buffers to memory, then processUpload streams to Cloudinary
 router.post('/upload',
   asyncMw(requirePermission('upload_asset')),
   handleUpload(upload.single('file')),
+  processUpload,
   mediaController.uploadSingle
 );
 
@@ -35,6 +34,7 @@ router.post('/upload',
 router.post('/upload-multiple',
   asyncMw(requirePermission('upload_asset')),
   handleUpload(upload.array('files', 10)),
+  processMultiUpload,
   mediaController.uploadMultiple
 );
 
@@ -42,6 +42,7 @@ router.post('/upload-multiple',
 router.post('/:id/variant',
   asyncMw(requirePermission('upload_version')),
   handleUpload(upload.single('file')),
+  processUpload,
   mediaController.addVariant
 );
 

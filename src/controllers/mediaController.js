@@ -87,7 +87,7 @@ exports.uploadSingle = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const { title, category, description, tags, visibility, startupId, targetDate } = req.body;
+    const { title, category, description, tags, visibility, startupId, targetDate, campaignEventId } = req.body;
     const cloudResult = req.file;
 
     const context = req.user.activeContext || 'personal';
@@ -97,12 +97,24 @@ exports.uploadSingle = async (req, res) => {
       agencyId = await resolveAgencyOwnerId(req.user);
     }
 
+    // If campaignEventId provided, auto-set targetDate from the event
+    let resolvedTargetDate = targetDate ? new Date(targetDate) : null;
+    let resolvedCampaignEventId = campaignEventId || null;
+    if (campaignEventId) {
+      try {
+        const CampaignEvent = require('../models/CampaignEvent');
+        const event = await CampaignEvent.findById(campaignEventId);
+        if (event && !resolvedTargetDate) resolvedTargetDate = event.date;
+      } catch { /* ignore */ }
+    }
+
     const media = await Media.create({
       userId: req.user.id,
       context,
       agencyId,
       startupId: (context === 'agency' && startupId) ? startupId : null,
-      targetDate: targetDate ? new Date(targetDate) : null,
+      targetDate: resolvedTargetDate,
+      campaignEventId: resolvedCampaignEventId,
       title: title || req.file.originalname.split('.')[0],
       description: description || '',
       category: category || 'Image',
@@ -450,11 +462,13 @@ exports.deleteMedia = async (req, res) => {
     const isUploader = media.userId.toString() === req.user._id.toString();
 
     if (media.context === 'agency') {
-      // Agency context: only the agency owner can delete
+      // Agency context: agency owner OR any executive role can delete
       const agencyId = await getAgencyOwnerId(req.user);
       const isAgencyOwner = agencyId && agencyId.toString() === req.user._id.toString();
-      if (!isAgencyOwner) {
-        return res.status(403).json({ error: 'Only the agency owner can delete agency assets' });
+      const EXECUTIVE_ROLES = ['ceo', 'coo', 'creative_director', 'head_of_production'];
+      const isExecutive = req.user.agencyRole && EXECUTIVE_ROLES.includes(req.user.agencyRole);
+      if (!isAgencyOwner && !isExecutive) {
+        return res.status(403).json({ error: 'Only agency owners and executives can delete agency assets' });
       }
     } else {
       // Personal context: only the uploader can delete
@@ -572,6 +586,7 @@ const formatMedia = (doc, requestingUserId) => {
     context: obj.context || 'personal',
     agencyId: obj.agencyId?.toString() || null,
     startupId: obj.startupId?.toString() || null,
+    campaignEventId: obj.campaignEventId?.toString() || null,
     targetDate: obj.targetDate || null,
     approvalStatus: obj.approvalStatus || 'pending',
     approvedBy: obj.approvedBy?.toString() || null,

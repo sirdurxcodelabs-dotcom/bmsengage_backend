@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/database');
 const { startScheduler } = require('./workers/postPublisher');
+const { startCampaignScheduler } = require('./workers/campaignScheduler');
 const { testEmailConfig } = require('./services/emailService');
 
 const authRoutes = require('./routes/authRoutes');
@@ -16,6 +17,10 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const startupRoutes = require('./routes/startupRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const campaignEventRoutes = require('./routes/campaignEventRoutes');
+const eventTemplateRoutes = require('./routes/eventTemplateRoutes');
+const scheduledCampaignRoutes = require('./routes/scheduledCampaignRoutes');
+const campaignNotificationRoutes = require('./routes/campaignNotificationRoutes');
 
 const app = express();
 
@@ -32,6 +37,7 @@ const startServer = async () => {
   try {
     await connectDB();
     startScheduler();
+    startCampaignScheduler();
 
     // Test email config in background — don't block server startup
     testEmailConfig().catch(() => {});
@@ -73,6 +79,10 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/startups', startupRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/campaign-events', campaignEventRoutes);
+app.use('/api/event-templates', eventTemplateRoutes);
+app.use('/api/scheduled-campaigns', scheduledCampaignRoutes);
+app.use('/api/campaign-notifications', campaignNotificationRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
