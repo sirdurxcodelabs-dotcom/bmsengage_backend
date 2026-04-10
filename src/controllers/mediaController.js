@@ -463,12 +463,18 @@ exports.deleteMedia = async (req, res) => {
 
     if (media.context === 'agency') {
       // Agency context: agency owner OR any executive role can delete
-      const agencyId = await getAgencyOwnerId(req.user);
+      const { resolveAgencyOwnerId: resolveOwner, getAgencyRole: getRole } = require('../utils/agencyHelper');
+      const agencyId = await resolveOwner(req.user);
       const isAgencyOwner = agencyId && agencyId.toString() === req.user._id.toString();
-      const EXECUTIVE_ROLES = ['ceo', 'coo', 'creative_director', 'head_of_production'];
-      const isExecutive = req.user.agencyRole && EXECUTIVE_ROLES.includes(req.user.agencyRole);
-      if (!isAgencyOwner && !isExecutive) {
-        return res.status(403).json({ error: 'Only agency owners and executives can delete agency assets' });
+
+      if (!isAgencyOwner) {
+        // Resolve the user's actual agency role dynamically
+        const EXECUTIVE_ROLES = ['ceo', 'coo', 'creative_director', 'head_of_production'];
+        const agencyRole = await getRole(req.user, agencyId);
+        const isExecutive = agencyRole && EXECUTIVE_ROLES.includes(agencyRole);
+        if (!isExecutive) {
+          return res.status(403).json({ error: 'Only agency owners and executives can delete agency assets' });
+        }
       }
     } else {
       // Personal context: only the uploader can delete
