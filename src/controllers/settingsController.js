@@ -46,6 +46,12 @@ exports.getProfile = async (req, res) => {
         if (agencyOwnerId) {
           const agencyRole = await getAgencyRole(user, agencyOwnerId);
           formatted.agencyRole = agencyRole; // 'owner' | role string
+
+          // Expose the agency owner's enableStartups flag to all team members
+          // so the frontend can show/hide the startup selector regardless of role
+          const User = require('../models/User');
+          const owner = await User.findById(agencyOwnerId).select('agency').lean();
+          formatted.agencyEnableStartups = owner?.agency?.enableStartups ?? false;
         }
       } catch (e) { /* non-fatal */ }
     }
@@ -114,13 +120,14 @@ exports.changePassword = async (req, res) => {
 // PATCH /api/settings/notifications
 exports.updateNotificationPrefs = async (req, res) => {
   try {
-    const { accountSecurity, galleryAssets, postSchedule, systemUpdates } = req.body;
+    const { accountSecurity, galleryAssets, postSchedule, systemUpdates, campaignEvents } = req.body;
     const user = await User.findById(req.user._id);
     if (!user.notificationPrefs) user.notificationPrefs = {};
     if (accountSecurity !== undefined) user.notificationPrefs.accountSecurity = accountSecurity;
     if (galleryAssets !== undefined) user.notificationPrefs.galleryAssets = galleryAssets;
     if (postSchedule !== undefined) user.notificationPrefs.postSchedule = postSchedule;
     if (systemUpdates !== undefined) user.notificationPrefs.systemUpdates = systemUpdates;
+    if (campaignEvents !== undefined) user.notificationPrefs.campaignEvents = campaignEvents;
     user.markModified('notificationPrefs');
     await user.save();
     res.json({ notificationPrefs: user.notificationPrefs });

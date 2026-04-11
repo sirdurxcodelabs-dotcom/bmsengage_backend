@@ -6,8 +6,12 @@ const ctrl = require('../controllers/eventTemplateController');
 const EXECUTIVE_ROLES = ['owner', 'ceo', 'coo', 'creative_director', 'head_of_production'];
 
 const requireExecutive = (req, res, next) => {
-  const role = req.user?.agencyRole;
-  if (!role || !EXECUTIVE_ROLES.includes(role)) {
+  const agencyRole = req.user?.agencyRole;
+  const personalRoles = req.user?.roles ?? [];
+  const hasAccess =
+    (agencyRole && EXECUTIVE_ROLES.includes(agencyRole)) ||
+    personalRoles.some(r => EXECUTIVE_ROLES.includes(r));
+  if (!hasAccess) {
     return res.status(403).json({ error: 'Only executive roles can manage templates.' });
   }
   next();

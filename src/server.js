@@ -1,7 +1,9 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const connectDB = require('./config/database');
+const socketManager = require('./socketManager');
 const { startScheduler } = require('./workers/postPublisher');
 const { startCampaignScheduler } = require('./workers/campaignScheduler');
 const { testEmailConfig } = require('./services/emailService');
@@ -23,6 +25,10 @@ const scheduledCampaignRoutes = require('./routes/scheduledCampaignRoutes');
 const campaignNotificationRoutes = require('./routes/campaignNotificationRoutes');
 
 const app = express();
+const httpServer = http.createServer(app);
+
+// Initialise Socket.IO
+socketManager.init(httpServer);
 
 // Middleware
 app.use(cors());
@@ -108,7 +114,7 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`\n🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health\n`);
 });

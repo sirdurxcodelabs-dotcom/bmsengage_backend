@@ -30,6 +30,7 @@
     "passport-twitter": "^1.0.4",
     "qrcode": "^1.5.4",
     "resend": "^6.9.4",
+    "socket.io": "^4.8.3",
     "speakeasy": "^2.0.0",
     "twilio": "^5.13.1"
   },

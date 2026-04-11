@@ -104,6 +104,7 @@ const userSchema = new mongoose.Schema({
     galleryAssets: { type: Boolean, default: false },
     postSchedule: { type: Boolean, default: false },
     systemUpdates: { type: Boolean, default: false },
+    campaignEvents: { type: Boolean, default: true },
   },
   // 2FA
   twoFA: {

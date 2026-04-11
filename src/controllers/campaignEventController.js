@@ -1,6 +1,6 @@
 const CampaignEvent = require('../models/CampaignEvent');
 const { resolveAgencyOwnerId } = require('../utils/agencyHelper');
-const { createNotification } = require('./campaignNotificationController');
+const { createAgencyNotification } = require('./notificationController');
 
 const fmt = (e) => ({
   id: e._id.toString(),
@@ -73,10 +73,10 @@ exports.create = async (req, res) => {
       await CampaignEvent.insertMany(extras);
     }
 
-    await createNotification(agencyId, {
-      title: '📅 New Campaign Event',
-      message: `A new event "${title}" has been created for ${new Date(date).toLocaleDateString()}.`,
-      type: 'event', roles: [], relatedEventId: event._id,
+    await createAgencyNotification(agencyId, 'campaign_created', '📅 New Campaign Event', `"${title}" scheduled for ${new Date(date).toLocaleDateString()}`, {
+      entityId: event._id.toString(),
+      entityType: 'campaign',
+      link: `/campaigns?event=${event._id}`,
     });
 
     res.status(201).json({ event: fmt(event) });
@@ -94,6 +94,9 @@ exports.update = async (req, res) => {
       { new: true }
     );
     if (!event) return res.status(404).json({ error: 'Event not found' });
+    createAgencyNotification(agencyId, 'campaign_updated', '✏️ Campaign Updated', `"${event.title}" has been updated.`, {
+      entityId: event._id.toString(), entityType: 'campaign', link: `/campaigns?event=${event._id}`,
+    }).catch(() => {});
     res.json({ event: fmt(event) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
@@ -104,6 +107,9 @@ exports.remove = async (req, res) => {
     const agencyId = await resolveAgencyOwnerId(req.user);
     const event = await CampaignEvent.findOneAndDelete({ _id: req.params.id, agencyId });
     if (!event) return res.status(404).json({ error: 'Event not found' });
+    createAgencyNotification(agencyId, 'campaign_deleted', '🗑️ Campaign Removed', `"${event.title}" has been deleted.`, {
+      entityType: 'campaign',
+    }).catch(() => {});
     res.json({ message: 'Event deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
